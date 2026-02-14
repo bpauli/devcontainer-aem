@@ -1,0 +1,15 @@
+# Downloaded/copied build artifacts
+quick-provider-*-jar-with-dependencies.jar
+cq-quickstart*.jar
+qp.sh
+start.sh
+proxy/
+
+# Devcontainer runtime
+.devcontainer/crx-quickstart/
+
+# Environment secrets
+.env
+
+# Claude
+CLAUDE.md
