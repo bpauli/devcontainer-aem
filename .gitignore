@@ -1,9 +1,10 @@
-# Downloaded/copied build artifacts
-quick-provider-*-jar-with-dependencies.jar
+# AEM SDK
+aem-sdk-quickstart.jar
+aem-sdk-*.zip
+aem-sdk-*.jar
+
+# Legacy build artifacts
 cq-quickstart*.jar
-qp.sh
-start.sh
-proxy/
 
 # Devcontainer runtime
 .devcontainer/crx-quickstart/

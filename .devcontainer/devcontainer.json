@@ -4,7 +4,7 @@
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
-  "forwardPorts": [4502, 3000],
+  "forwardPorts": [4502],
   "postStartCommand": ".devcontainer/start-aem.sh",
   "customizations": {
     "vscode": {
