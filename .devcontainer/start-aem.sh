@@ -2,11 +2,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 CONTAINER_NAME="aem-author"
 AEM_IMAGE="aem:latest"
 AEM_PORT=4502
-CRX_MOUNT="${SCRIPT_DIR:-.}/crx-quickstart"
+CRX_MOUNT="${SCRIPT_DIR}/crx-quickstart"
+
+# Build the AEM image if it doesn't exist
+if ! docker image inspect "${AEM_IMAGE}" &>/dev/null; then
+  echo "AEM image not found, building..."
+  "${PROJECT_DIR}/build.sh"
+fi
 
 # Stop and remove existing container if running
 docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
