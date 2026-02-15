@@ -42,7 +42,6 @@ GITIGNORE_ENTRIES=(
   "aem-sdk-*.zip"
   "aem-sdk-*.jar"
   "cq-quickstart*.jar"
-  ".devcontainer/crx-quickstart/"
   ".env"
 )
 
