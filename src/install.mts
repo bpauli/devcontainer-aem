@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
-import { createInterface, type Interface } from 'node:readline';
 import { mkdir, writeFile, readFile, chmod, access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import https from 'node:https';
+import { select, input, confirm } from '@inquirer/prompts';
+import pc from 'picocolors';
+import ora, { type Ora } from 'ora';
 
 const REPO = 'bpauli/devcontainer-aem';
 const BRANCH = 'main';
@@ -35,14 +37,9 @@ const GITIGNORE_ENTRIES = [
   '.env',
 ];
 
-interface SelectOption {
-  label: string;
-  description?: string;
-  value: string;
-}
-
 interface DevcontainerJson {
   features?: Record<string, Record<string, unknown>>;
+  forwardPorts?: number[];
   postCreateCommand?: string;
   [key: string]: unknown;
 }
@@ -76,75 +73,142 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-function question(rl: Interface, text: string): Promise<string> {
-  return new Promise((resolve) => rl.question(text, resolve));
-}
+function applyCodingAgent(devcontainerContent: string, agent: string): string {
+  if (agent === 'skip') return devcontainerContent;
 
-async function select(rl: Interface, prompt: string, options: SelectOption[]): Promise<string> {
-  console.log(`\n${prompt}`);
-  options.forEach((opt, i) => {
-    const desc = opt.description ? ` — ${opt.description}` : '';
-    console.log(`  ${i + 1}) ${opt.label}${desc}`);
-  });
-
-  while (true) {
-    const answer = await question(rl, '\nSelect an option: ');
-    const num = parseInt(answer.trim(), 10);
-    if (num >= 1 && num <= options.length) {
-      return options[num - 1].value;
-    }
-    console.log(`Please enter a number between 1 and ${options.length}.`);
-  }
-}
-
-function applyClaudeCode(devcontainerContent: string): string {
   const json: DevcontainerJson = JSON.parse(devcontainerContent);
   json.features = json.features ?? {};
   json.features['ghcr.io/devcontainers/features/node:1'] = {};
-  json.postCreateCommand = 'npm install -g @anthropic-ai/claude-code';
+
+  const packages: Record<string, string> = {
+    'claude-code': '@anthropic-ai/claude-code',
+    'codex': '@openai/codex',
+  };
+
+  json.postCreateCommand = `npm install -g ${packages[agent]}`;
   return JSON.stringify(json, null, 2) + '\n';
+}
+
+function applyPorts(content: string, file: string, aemPort: number): string {
+  if (file === 'start.sh') {
+    return content.replace(/-p 4502\b/, `-p ${aemPort}`);
+  }
+  if (file === '.devcontainer/start-aem.sh') {
+    return content.replace(/AEM_PORT=4502/, `AEM_PORT=${aemPort}`);
+  }
+  if (file === '.devcontainer/devcontainer.json') {
+    const json: DevcontainerJson = JSON.parse(content);
+    json.forwardPorts = [aemPort];
+    return JSON.stringify(json, null, 2) + '\n';
+  }
+  return content;
+}
+
+function applyDebug(content: string, file: string, debugPort: number): string {
+  if (file === 'start.sh') {
+    return content.replace(
+      /exec java /,
+      `exec java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${debugPort} `,
+    );
+  }
+  if (file === '.devcontainer/start-aem.sh') {
+    // Add debug port mapping to docker run
+    return content.replace(
+      /-p \$\{AEM_PORT\}:\$\{AEM_PORT\}/,
+      `-p \${AEM_PORT}:\${AEM_PORT} \\\n  -p ${debugPort}:${debugPort}`,
+    );
+  }
+  if (file === '.devcontainer/devcontainer.json') {
+    const json: DevcontainerJson = JSON.parse(content);
+    json.forwardPorts = [...(json.forwardPorts ?? []), debugPort];
+    return JSON.stringify(json, null, 2) + '\n';
+  }
+  return content;
+}
+
+function validatePort(val: string): string | true {
+  const num = parseInt(val, 10);
+  if (isNaN(num) || num < 1 || num > 65535) {
+    return 'Please enter a valid port number (1-65535)';
+  }
+  return true;
 }
 
 async function main(): Promise<void> {
   const cwd = process.cwd();
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let spinner: Ora | undefined;
 
   try {
-    console.log('AEM Devcontainer Setup');
+    console.log('\n' + pc.bold(pc.cyan('  AEM Devcontainer Setup')) + '\n');
 
     // --- Wizard ---
-    const codingAgent = await select(rl, 'Select a coding agent:', [
-      {
-        label: 'Claude Code',
-        description: 'installs @anthropic-ai/claude-code in the devcontainer',
-        value: 'claude-code',
-      },
-      {
-        label: 'Skip',
-        description: 'no coding agent',
-        value: 'skip',
-      },
-    ]);
+    const codingAgent = await select({
+      message: 'Select a coding agent:',
+      choices: [
+        { name: 'Claude Code', value: 'claude-code', description: 'installs @anthropic-ai/claude-code' },
+        { name: 'Codex', value: 'codex', description: 'installs @openai/codex' },
+        { name: 'Skip', value: 'skip', description: 'no coding agent' },
+      ],
+    });
 
-    rl.close();
+    const aemPortStr = await input({
+      message: 'AEM author port:',
+      default: '4502',
+      validate: validatePort,
+    });
+    const aemPort = parseInt(aemPortStr, 10);
 
-    console.log(`\nInstalling AEM devcontainer into ${cwd}...`);
+    const enableDebug = await confirm({
+      message: 'Enable JVM remote debugging?',
+      default: true,
+    });
+
+    let debugPort: number | undefined;
+    if (enableDebug) {
+      const debugPortStr = await input({
+        message: 'JVM debug port:',
+        default: '5005',
+        validate: (val) => {
+          const result = validatePort(val);
+          if (result !== true) return result;
+          if (parseInt(val, 10) === aemPort) {
+            return 'Debug port must be different from AEM port';
+          }
+          return true;
+        },
+      });
+      debugPort = parseInt(debugPortStr, 10);
+    }
 
     // --- Create directories ---
     await mkdir(join(cwd, '.devcontainer'), { recursive: true });
 
     // --- Download files ---
+    spinner = ora('Downloading files...').start();
+
     for (const file of FILES) {
-      process.stdout.write(`  Downloading ${file}...`);
+      spinner.text = `Downloading ${pc.blue(file)}...`;
       let content = await download(`${BASE_URL}/${file}`);
 
-      if (file === '.devcontainer/devcontainer.json' && codingAgent === 'claude-code') {
-        content = applyClaudeCode(content);
+      // Apply coding agent
+      if (file === '.devcontainer/devcontainer.json') {
+        content = applyCodingAgent(content, codingAgent);
+      }
+
+      // Apply port customization
+      if (aemPort !== 4502) {
+        content = applyPorts(content, file, aemPort);
+      }
+
+      // Apply debug configuration
+      if (debugPort !== undefined) {
+        content = applyDebug(content, file, debugPort);
       }
 
       await writeFile(join(cwd, file), content);
-      console.log(' done');
     }
+
+    spinner.succeed('Files downloaded');
 
     // --- Make scripts executable ---
     for (const script of EXECUTABLE_SCRIPTS) {
@@ -156,7 +220,7 @@ async function main(): Promise<void> {
     if (!(await fileExists(envPath))) {
       const example = await readFile(join(cwd, '.env.example'), 'utf8');
       await writeFile(envPath, example);
-      console.log('  Created .env from .env.example');
+      console.log(pc.green('  \u2713') + ' Created .env from .env.example');
     }
 
     // --- Update .gitignore ---
@@ -164,30 +228,41 @@ async function main(): Promise<void> {
     if (await fileExists(gitignorePath)) {
       let content = await readFile(gitignorePath, 'utf8');
       const lines = content.split('\n');
+      let added = false;
       for (const entry of GITIGNORE_ENTRIES) {
         if (!lines.includes(entry)) {
           content += `${entry}\n`;
-          console.log(`  Added '${entry}' to .gitignore`);
+          added = true;
         }
       }
-      await writeFile(gitignorePath, content);
+      if (added) {
+        await writeFile(gitignorePath, content);
+        console.log(pc.green('  \u2713') + ' Updated .gitignore');
+      }
     } else {
       await writeFile(gitignorePath, GITIGNORE_ENTRIES.join('\n') + '\n');
-      console.log('  Created .gitignore');
+      console.log(pc.green('  \u2713') + ' Created .gitignore');
     }
 
     // --- Done ---
-    console.log('\nAEM devcontainer installed.');
-    if (codingAgent === 'claude-code') {
-      console.log('Claude Code will be installed automatically when the devcontainer starts.');
+    console.log(pc.bold(pc.green('\n  Installation complete!\n')));
+
+    if (codingAgent !== 'skip') {
+      const agentName = codingAgent === 'claude-code' ? 'Claude Code' : 'Codex';
+      console.log(pc.dim(`  ${agentName} will be installed when the devcontainer starts.\n`));
     }
-    console.log('\nNext steps:');
-    console.log('  1. Download the AEM SDK from https://experience.adobe.com/#/downloads');
-    console.log('  2. Unzip and rename the quickstart JAR to aem-sdk-quickstart.jar in this directory');
-    console.log('  3. Open this folder in VS Code and reopen in container');
+
+    console.log(pc.bold('  Next steps:\n'));
+    console.log(`  1. Download the AEM SDK from ${pc.cyan('https://experience.adobe.com/#/downloads')}`);
+    console.log(`  2. Rename the quickstart JAR to ${pc.blue('aem-sdk-quickstart.jar')}`);
+    console.log('  3. Open this folder in VS Code and reopen in container\n');
   } catch (err) {
-    rl.close();
-    console.error(`\nError: ${(err as Error).message}`);
+    if ((err as Error).name === 'ExitPromptError') {
+      console.log(pc.dim('\n  Setup cancelled.\n'));
+      process.exit(0);
+    }
+    spinner?.fail('Download failed');
+    console.error(pc.red(`\n  Error: ${(err as Error).message}\n`));
     process.exit(1);
   }
 }
