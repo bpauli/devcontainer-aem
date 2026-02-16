@@ -12,5 +12,9 @@ cq-quickstart*.jar
 # Environment secrets
 .env
 
+# Node
+node_modules/
+dist/
+
 # Claude
 CLAUDE.md

@@ -12,7 +12,7 @@ Run AEM as a Cloud Service locally inside a VS Code devcontainer using Docker-in
 Add the AEM devcontainer to an existing project:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bpauli/devcontainer-aem/main/install.sh | bash
+npx github:bpauli/devcontainer-aem
 ```
 
 Then follow the steps below starting from [Download the AEM SDK](#1-download-the-aem-sdk).

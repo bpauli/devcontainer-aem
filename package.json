@@ -1,0 +1,27 @@
+{
+  "name": "create-aem-devcontainer",
+  "version": "1.0.0",
+  "description": "Install AEM devcontainer setup into an existing AEM project",
+  "type": "module",
+  "bin": {
+    "create-aem-devcontainer": "./install.mjs"
+  },
+  "files": [
+    "install.mjs"
+  ],
+  "scripts": {
+    "build": "tsc && cp dist/install.mjs .",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "aem",
+    "devcontainer",
+    "docker",
+    "adobe-experience-manager"
+  ],
+  "license": "MIT"
+}
