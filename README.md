@@ -4,10 +4,10 @@ Run AEM as a Cloud Service locally inside a VS Code devcontainer using Docker-in
 
 ## Features
 
-- **One-command setup** — `npx github:bpauli/devcontainer-aem` adds everything to an existing project
-- **Interactive wizard** — arrow-key menus, colored output, and animated spinners
+- **One-command setup** — `curl | bash` adds everything to an existing project (no Node.js required)
+- **Interactive wizard** — numbered menus and colored output
 - **Agentic coding** — optional install of [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex) inside the devcontainer
-- **Configurable ports** — choose the AEM author port and enable JVM remote debugging
+- **Configurable ports** — choose the AEM author port and JVM debug port
 - **Docker-in-Docker** — AEM runs in its own container with a persistent `crx-quickstart` volume
 - **Maven included** — full Maven build toolchain available out of the box
 
@@ -21,14 +21,21 @@ Run AEM as a Cloud Service locally inside a VS Code devcontainer using Docker-in
 Add the AEM devcontainer to an existing project:
 
 ```bash
-npx github:bpauli/devcontainer-aem
+curl -fsSL https://raw.githubusercontent.com/bpauli/devcontainer-aem/main/install.sh | bash
+```
+
+Or download and inspect first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bpauli/devcontainer-aem/main/install.sh -o install.sh
+bash install.sh
 ```
 
 The wizard will guide you through:
 
 1. **Coding agent** — pick Claude Code, Codex, or skip
 2. **AEM author port** — defaults to `4502`
-3. **JVM remote debugging** — enable and choose a debug port (default `5005`)
+3. **JVM debug port** — defaults to `5005`
 
 Then follow the steps below starting from [Download the AEM SDK](#1-download-the-aem-sdk).
 
@@ -104,7 +111,7 @@ AEM logs are available at `.devcontainer/crx-quickstart/logs/` via the volume mo
 
 ### JVM Remote Debugging
 
-If you enabled remote debugging during setup, attach your debugger to `localhost:5005` (or the port you chose). The JVM starts with `suspend=n`, so AEM does not wait for a debugger to connect.
+JVM remote debugging is always enabled. Attach your debugger to `localhost:5005` (or the port you chose during setup). The JVM starts with `suspend=n`, so AEM does not wait for a debugger to connect.
 
 ## Agentic Coding
 
